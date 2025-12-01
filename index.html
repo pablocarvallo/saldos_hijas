@@ -1,0 +1,290 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Rastreador Piti & Emi</title>
+    <!-- Tailwind CSS CDN -->
+    <script src="https://cdn.tailwindcss.com"></script>
+    <!-- Configuración para usar un font similar a iOS (Inter) -->
+    <style>
+        body {
+            font-family: 'Inter', sans-serif;
+            -webkit-tap-highlight-color: transparent;
+        }
+        /* Estilo para simular el efecto de las cards de iOS */
+        .card {
+            box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.1), 0 2px 4px -2px rgba(0, 0, 0, 0.06);
+            border: 1px solid rgba(229, 231, 235, 0.5); /* light gray border */
+            backdrop-filter: blur(10px);
+            background-color: rgba(255, 255, 255, 0.9); /* slight transparency */
+        }
+        /* Estilo para los botones principales */
+        .action-button {
+            transition: all 0.15s ease-in-out;
+        }
+        .action-button:active {
+            transform: scale(0.98);
+        }
+    </style>
+</head>
+<body class="bg-gray-100 min-h-screen p-4 flex items-center justify-center">
+
+    <div id="app-container" class="w-full max-w-md">
+        <!-- Título principal -->
+        <header class="mb-8 text-center">
+            <h1 class="text-3xl font-extrabold text-gray-900 tracking-tight">Rastreador de Saldos</h1>
+            <p id="auth-status" class="text-xs text-gray-500 mt-1"></p>
+        </header>
+
+        <!-- Contenedor de Saldos (Cards) -->
+        <div id="balance-display" class="grid grid-cols-2 gap-4 mb-8">
+            <!-- Card Piti -->
+            <div class="card p-5 rounded-xl text-center bg-blue-500/10 border-blue-200">
+                <p class="text-sm font-semibold text-blue-800 uppercase">Piti</p>
+                <p id="piti-total" class="text-4xl font-bold mt-1 text-blue-900 tracking-tight transition duration-300">
+                    $0
+                </p>
+            </div>
+            <!-- Card Emi -->
+            <div class="card p-5 rounded-xl text-center bg-pink-500/10 border-pink-200">
+                <p class="text-sm font-semibold text-pink-800 uppercase">Emi</p>
+                <p id="emi-total" class="text-4xl font-bold mt-1 text-pink-900 tracking-tight transition duration-300">
+                    $0
+                </p>
+            </div>
+        </div>
+
+        <!-- Panel de Ingreso de Datos -->
+        <div class="card p-6 rounded-xl space-y-4">
+            <h2 class="text-xl font-semibold text-gray-700">Ingresar Monto</h2>
+
+            <!-- Input de Monto -->
+            <div>
+                <label for="amount-input" class="block text-sm font-medium text-gray-600 mb-2">Monto a agregar (ej: 2000)</label>
+                <input type="number" id="amount-input" placeholder="0.00" class="w-full p-3 border border-gray-300 rounded-lg focus:ring-blue-500 focus:border-blue-500 text-lg" inputmode="decimal">
+            </div>
+
+            <!-- Botones de Acción -->
+            <div class="flex space-x-3 pt-2">
+                <button id="add-piti" class="action-button flex-1 py-3 px-4 bg-blue-600 text-white font-semibold rounded-xl hover:bg-blue-700 focus:outline-none focus:ring-4 focus:ring-blue-500/50 shadow-lg shadow-blue-500/30">
+                    Añadir a Piti
+                </button>
+                <button id="add-emi" class="action-button flex-1 py-3 px-4 bg-pink-600 text-white font-semibold rounded-xl hover:bg-pink-700 focus:outline-none focus:ring-4 focus:ring-pink-500/50 shadow-lg shadow-pink-500/30">
+                    Añadir a Emi
+                </button>
+            </div>
+
+            <!-- Mensajes de Error y Éxito -->
+            <p id="message-box" class="text-sm text-center pt-2 h-6"></p>
+        </div>
+        
+        <!-- Contenedor para mostrar el ID de usuario -->
+        <div class="mt-8 text-center text-xs text-gray-500 p-3 bg-gray-200 rounded-lg">
+            <p>ID de la aplicación (para persistencia): <span id="app-id-display" class="font-mono text-gray-700">Cargando...</span></p>
+            <p>ID de Usuario: <span id="user-id-display" class="font-mono text-gray-700">Autenticando...</span></p>
+        </div>
+    </div>
+
+    <!-- Firebase SDKs -->
+    <script type="module">
+        import { initializeApp } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-app.js";
+        import { 
+            getAuth, 
+            signInAnonymously, 
+            signInWithCustomToken, 
+            onAuthStateChanged 
+        } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-auth.js";
+        import { 
+            getFirestore, 
+            doc, 
+            setDoc, 
+            getDoc, 
+            onSnapshot, 
+            runTransaction,
+            setLogLevel 
+        } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-firestore.js";
+
+        // Establecer el nivel de registro de Firestore a Debug
+        setLogLevel('Debug');
+
+        // --- Variables de Entorno y Configuración de Firebase (proporcionadas por Canvas) ---
+        const appId = typeof __app_id !== 'undefined' ? __app_id : 'default-app-id';
+        const firebaseConfig = JSON.parse(typeof __firebase_config !== 'undefined' ? __firebase_config : '{}');
+        const initialAuthToken = typeof __initial_auth_token !== 'undefined' ? __initial_auth_token : null;
+
+        let db;
+        let auth;
+        let userId = 'Autenticando...';
+        
+        // Referencias del DOM
+        const pitiTotalEl = document.getElementById('piti-total');
+        const emiTotalEl = document.getElementById('emi-total');
+        const amountInput = document.getElementById('amount-input');
+        const addPitiButton = document.getElementById('add-piti');
+        const addEmiButton = document.getElementById('add-emi');
+        const messageBox = document.getElementById('message-box');
+        const authStatusEl = document.getElementById('auth-status');
+        const appIdDisplay = document.getElementById('app-id-display');
+        const userIdDisplay = document.getElementById('user-id-display');
+
+        // Mostrar ID de la App
+        appIdDisplay.textContent = appId;
+
+        // Rutas y colecciones
+        // Usamos una ruta pública para que el saldo sea compartido y persistente para esta app.
+        const BALANCES_DOC_PATH = `artifacts/${appId}/public/data/balances/totals`;
+        
+        // Formatear número a formato de moneda local
+        const formatter = new Intl.NumberFormat('es-CL', {
+            style: 'currency',
+            currency: 'CLP', // Usamos CLP (Peso Chileno) como ejemplo
+            minimumFractionDigits: 0,
+            maximumFractionDigits: 0,
+        });
+
+        // Función para mostrar mensajes temporales en la UI
+        function showMessage(text, isError = false) {
+            messageBox.textContent = text;
+            messageBox.className = isError 
+                ? 'text-sm text-center pt-2 h-6 text-red-600' 
+                : 'text-sm text-center pt-2 h-6 text-green-600';
+            setTimeout(() => {
+                messageBox.textContent = '';
+                messageBox.className = 'text-sm text-center pt-2 h-6';
+            }, 3000);
+        }
+
+        // --- 1. Inicialización y Autenticación de Firebase ---
+        async function setupFirebaseAndAuth() {
+            try {
+                if (Object.keys(firebaseConfig).length === 0) {
+                    console.error("Firebase config no está disponible.");
+                    authStatusEl.textContent = "Error: Configuración de Firebase no disponible.";
+                    return;
+                }
+                
+                const app = initializeApp(firebaseConfig);
+                db = getFirestore(app);
+                auth = getAuth(app);
+
+                // Autenticación: Usar token personalizado si está disponible, sino anónima.
+                await new Promise(resolve => {
+                    onAuthStateChanged(auth, async (user) => {
+                        if (user) {
+                            userId = user.uid;
+                            authStatusEl.textContent = "Conectado y datos guardados de forma persistente.";
+                            userIdDisplay.textContent = userId;
+                            console.log("Usuario autenticado. UID:", userId);
+                            resolve();
+                        } else {
+                            try {
+                                if (initialAuthToken) {
+                                    await signInWithCustomToken(auth, initialAuthToken);
+                                } else {
+                                    await signInAnonymously(auth);
+                                }
+                            } catch (error) {
+                                console.error("Error en la autenticación:", error);
+                                authStatusEl.textContent = "Error de autenticación. Los datos no se guardarán.";
+                                userIdDisplay.textContent = "ANÓNIMO (Error)";
+                                resolve(); // Continuar incluso con error de auth
+                            }
+                        }
+                    });
+                });
+
+                // Inicializar y escuchar los datos solo después de la autenticación
+                initDataListener();
+            } catch (error) {
+                console.error("Error al inicializar Firebase:", error);
+                authStatusEl.textContent = "Error fatal al iniciar la aplicación.";
+            }
+        }
+
+        // --- 2. Listener de Datos en Tiempo Real (onSnapshot) ---
+        function initDataListener() {
+            if (!db) return; // Asegurar que db esté inicializado
+
+            const docRef = doc(db, BALANCES_DOC_PATH);
+
+            onSnapshot(docRef, async (docSnapshot) => {
+                if (docSnapshot.exists()) {
+                    // Datos encontrados: Actualizar la UI
+                    const data = docSnapshot.data();
+                    const pitiTotal = data.pitiTotal || 0;
+                    const emiTotal = data.emiTotal || 0;
+                    
+                    pitiTotalEl.textContent = formatter.format(pitiTotal);
+                    emiTotalEl.textContent = formatter.format(emiTotal);
+                    console.log(`Datos actualizados. Piti: ${pitiTotal}, Emi: ${emiTotal}`);
+                } else {
+                    // El documento no existe: Inicializarlo con 0
+                    const initialData = { pitiTotal: 0, emiTotal: 0, lastUpdate: new Date().toISOString() };
+                    try {
+                        await setDoc(docRef, initialData);
+                        console.log("Documento de balances inicializado en Firestore.");
+                    } catch (e) {
+                        console.error("Error al inicializar el documento:", e);
+                    }
+                }
+            }, (error) => {
+                console.error("Error en el listener de Firestore:", error);
+                showMessage("Error al cargar los datos en tiempo real.", true);
+            });
+        }
+
+        // --- 3. Función para actualizar el saldo (con Transacciones) ---
+        async function updateBalance(target) {
+            if (!db || !auth.currentUser) {
+                showMessage("La aplicación se está cargando o hay un error de conexión.", true);
+                return;
+            }
+
+            const amountValue = parseFloat(amountInput.value);
+            if (isNaN(amountValue) || amountValue <= 0) {
+                showMessage("Por favor, ingresa un monto válido (mayor a 0).", true);
+                return;
+            }
+
+            const docRef = doc(db, BALANCES_DOC_PATH);
+
+            try {
+                // Usamos runTransaction para asegurar que la lectura y la escritura sean atómicas.
+                // Esto previene condiciones de carrera si dos usuarios actualizan al mismo tiempo.
+                await runTransaction(db, async (transaction) => {
+                    const sfDoc = await transaction.get(docRef);
+                    if (!sfDoc.exists()) {
+                        throw "Documento no existe. Intenta recargar la página.";
+                    }
+
+                    const newBalance = (sfDoc.data()[target] || 0) + amountValue;
+                    
+                    // Crear el objeto de actualización
+                    const updateObject = {
+                        [target]: newBalance,
+                        lastUpdate: new Date().toISOString()
+                    };
+                    
+                    transaction.update(docRef, updateObject);
+                });
+
+                showMessage(`Se agregaron ${formatter.format(amountValue)} a ${target === 'pitiTotal' ? 'Piti' : 'Emi'}.`, false);
+                amountInput.value = ''; // Limpiar el input
+
+            } catch (e) {
+                console.error("Error en la transacción (actualización de saldo):", e);
+                showMessage("Error al actualizar el saldo. Intenta de nuevo.", true);
+            }
+        }
+
+        // --- 4. Asignación de Eventos ---
+        addPitiButton.addEventListener('click', () => updateBalance('pitiTotal'));
+        addEmiButton.addEventListener('click', () => updateBalance('emiTotal'));
+
+        // Iniciar la aplicación
+        setupFirebaseAndAuth();
+
+    </script>
+</body>
+</html>
