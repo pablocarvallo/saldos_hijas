@@ -39,6 +39,13 @@
             opacity: 0.6;
             filter: grayscale(0.5);
         }
+        /* Estilos para el Modal de confirmación */
+        .modal-overlay {
+            background-color: rgba(0, 0, 0, 0.4);
+        }
+        .modal-content {
+            box-shadow: 0 10px 15px -3px rgba(0, 0, 0, 0.1), 0 4px 6px -4px rgba(0, 0, 0, 0.1);
+        }
     </style>
 </head>
 <body class="bg-gray-100 min-h-screen p-4 flex items-center justify-center">
@@ -46,9 +53,9 @@
     <div id="app-container" class="w-full max-w-md">
         <!-- Título principal -->
         <header class="mb-8 text-center">
-            <h1 class="text-3xl font-extrabold text-gray-900 tracking-tight">Rastreador de Saldos</h1>
+            <h1 class="text-3xl font-extrabold text-gray-900 tracking-tight">Saldos hijitas</h1>
             <!-- El estado de autenticación ahora indica el modo LocalStorage -->
-            <p id="auth-status" class="text-xs text-red-600 font-semibold mt-1">Cargando...</p>
+            <p id="auth-status" class="text-xs text-green-600 font-semibold mt-1">Modo LOCAL y PERSISTENTE. Los datos se guardan en este dispositivo.</p>
         </header>
 
         <!-- Contenedor de Saldos (Cards) -->
@@ -71,56 +78,95 @@
 
         <!-- Panel de Ingreso de Datos -->
         <div class="card p-6 rounded-xl space-y-4">
-            <h2 class="text-xl font-semibold text-gray-700">Ingresar Monto</h2>
+            <h2 class="text-xl font-semibold text-gray-700">Ingresar Monto y Detalle</h2>
 
             <!-- Input de Monto -->
             <div>
                 <label for="amount-input" class="block text-sm font-medium text-gray-600 mb-2">Monto a agregar (ej: 2000)</label>
                 <input type="number" id="amount-input" placeholder="0.00" class="w-full p-3 border border-gray-300 rounded-lg focus:ring-blue-500 focus:border-blue-500 text-lg" inputmode="decimal">
             </div>
+            
+            <!-- NUEVO Input de Detalle -->
+            <div>
+                <label for="detail-input" class="block text-sm font-medium text-gray-600 mb-2">Detalle (ej: Helados)</label>
+                <input type="text" id="detail-input" placeholder="Detalle de la transacción (opcional)" class="w-full p-3 border border-gray-300 rounded-lg focus:ring-blue-500 focus:border-blue-500 text-lg">
+            </div>
 
             <!-- Botones de Acción -->
             <div class="flex space-x-3 pt-2">
                 <!-- Los botones se deshabilitan al inicio con JS -->
-                <button id="add-piti" class="action-button flex-1 py-3 px-4 bg-gray-400 text-white font-semibold rounded-xl focus:outline-none focus:ring-4 focus:ring-blue-500/50 shadow-lg shadow-blue-500/30" disabled>
+                <button id="add-piti" class="action-button flex-1 py-3 px-4 bg-blue-600 text-white font-semibold rounded-xl focus:outline-none focus:ring-4 focus:ring-blue-500/50 shadow-lg shadow-blue-500/30" disabled>
                     Añadir a Piti
                 </button>
-                <button id="add-emi" class="action-button flex-1 py-3 px-4 bg-gray-400 text-white font-semibold rounded-xl focus:outline-none focus:ring-4 focus:ring-pink-500/50 shadow-lg shadow-pink-500/30" disabled>
+                <button id="add-emi" class="action-button flex-1 py-3 px-4 bg-pink-600 text-white font-semibold rounded-xl focus:outline-none focus:ring-4 focus:ring-pink-500/50 shadow-lg shadow-pink-500/30" disabled>
                     Añadir a Emi
                 </button>
             </div>
+
+            <!-- Botones de Utilidad -->
+            <div class="flex space-x-3 pt-4 border-t border-gray-200">
+                <button id="reset-button" class="action-button flex-1 py-2 px-4 bg-red-500 text-white font-semibold rounded-xl focus:outline-none focus:ring-4 focus:ring-red-500/50" disabled>
+                    Restablecer
+                </button>
+                <button id="export-button" class="action-button flex-1 py-2 px-4 bg-indigo-500 text-white font-semibold rounded-xl focus:outline-none focus:ring-4 focus:ring-indigo-500/50" disabled>
+                    Exportar
+                </button>
+            </div>
+
 
             <!-- Mensajes de Error y Éxito -->
             <p id="message-box" class="text-sm text-center pt-2 h-6"></p>
         </div>
         
-        <!-- Contenedor para mostrar el ID de usuario -->
+        <!-- Contenedor de estado de persistencia -->
         <div class="mt-8 text-center text-xs text-gray-500 p-3 bg-gray-200 rounded-lg">
             <p>Tipo de Persistencia: <span id="app-id-display" class="font-mono text-gray-700">LOCAL</span></p>
-            <p>ID de Dispositivo: <span id="user-id-display" class="font-mono text-gray-700">Persistencia local activa</span></p>
+            <p>Estado: <span id="user-id-display" class="font-mono text-gray-700">Persistencia local activa</span></p>
         </div>
     </div>
 
-    <!-- Lógica de la Aplicación con LocalStorage (No requiere Firebase) -->
+    <!-- Modal de Confirmación (Oculto por defecto) -->
+    <div id="reset-modal" class="modal-overlay fixed inset-0 z-50 flex items-center justify-center hidden">
+        <div class="modal-content bg-white p-6 rounded-xl w-11/12 max-w-sm">
+            <h3 class="text-xl font-bold text-gray-800 mb-3">Confirmar Restablecimiento</h3>
+            <p class="text-gray-600 mb-6">¿Estás seguro de que deseas restablecer **ambos saldos (Piti y Emi)** a $0? Esta acción también **borrará el historial de transacciones**.</p>
+            <div class="flex justify-end space-x-3">
+                <button id="cancel-reset" class="py-2 px-4 text-gray-600 font-medium rounded-lg hover:bg-gray-100 transition">
+                    Cancelar
+                </button>
+                <button id="confirm-reset" class="py-2 px-4 bg-red-600 text-white font-semibold rounded-lg hover:bg-red-700 transition">
+                    Sí, Restablecer a $0
+                </button>
+            </div>
+        </div>
+    </div>
+
+    <!-- Lógica de la Aplicación con LocalStorage -->
     <script type="module">
         // --- Variables de Estado y Configuración de LocalStorage ---
         const PITI_KEY = 'pitiBalance';
         const EMI_KEY = 'emiBalance';
+        const HISTORY_KEY = 'balanceHistory'; 
 
         let pitiTotal = 0;
         let emiTotal = 0;
+        let history = []; // Almacena el historial de transacciones
         let isAppReady = false; 
         
         // Referencias del DOM
         const pitiTotalEl = document.getElementById('piti-total');
         const emiTotalEl = document.getElementById('emi-total');
         const amountInput = document.getElementById('amount-input');
+        const detailInput = document.getElementById('detail-input'); // NUEVO: Input de detalle
         const addPitiButton = document.getElementById('add-piti');
         const addEmiButton = document.getElementById('add-emi');
+        const resetButton = document.getElementById('reset-button');
+        const exportButton = document.getElementById('export-button');
         const messageBox = document.getElementById('message-box');
         const authStatusEl = document.getElementById('auth-status');
-        const appIdDisplay = document.getElementById('app-id-display');
-        const userIdDisplay = document.getElementById('user-id-display');
+        const resetModal = document.getElementById('reset-modal');
+        const confirmResetButton = document.getElementById('confirm-reset');
+        const cancelResetButton = document.getElementById('cancel-reset');
 
         // Formatear número a formato de moneda local
         const formatter = new Intl.NumberFormat('es-CL', {
@@ -146,26 +192,24 @@
         function updateButtonState(ready) {
             addPitiButton.disabled = !ready;
             addEmiButton.disabled = !ready;
+            resetButton.disabled = !ready;
+            exportButton.disabled = !ready;
             
             // Estilos para Piti
-            addPitiButton.classList.remove('bg-blue-600', 'hover:bg-blue-700', 'bg-gray-400');
-            if (ready) {
-                addPitiButton.classList.add('bg-blue-600', 'hover:bg-blue-700', 'shadow-blue-500/30');
-                addPitiButton.classList.remove('bg-gray-400', 'cursor-not-allowed', 'shadow-none');
-            } else {
-                addPitiButton.classList.add('bg-gray-400', 'cursor-not-allowed', 'shadow-none');
-                addPitiButton.classList.remove('bg-blue-600', 'hover:bg-blue-700', 'shadow-blue-500/30');
-            }
+            addPitiButton.classList.remove('bg-gray-400');
+            if (!ready) { addPitiButton.classList.add('bg-gray-400', 'cursor-not-allowed', 'shadow-none'); }
 
             // Estilos para Emi
-            addEmiButton.classList.remove('bg-pink-600', 'hover:bg-pink-700', 'bg-gray-400');
-            if (ready) {
-                addEmiButton.classList.add('bg-pink-600', 'hover:bg-pink-700', 'shadow-pink-500/30');
-                addEmiButton.classList.remove('bg-gray-400', 'cursor-not-allowed', 'shadow-none');
-            } else {
-                addEmiButton.classList.add('bg-gray-400', 'cursor-not-allowed', 'shadow-none');
-                addEmiButton.classList.remove('bg-pink-600', 'hover:bg-pink-700', 'shadow-pink-500/30');
-            }
+            addEmiButton.classList.remove('bg-gray-400');
+            if (!ready) { addEmiButton.classList.add('bg-gray-400', 'cursor-not-allowed', 'shadow-none'); }
+            
+            // Estilos para Reset
+            resetButton.classList.remove('bg-gray-400');
+            if (!ready) { resetButton.classList.add('bg-gray-400', 'cursor-not-allowed', 'shadow-none'); }
+
+            // Estilos para Export
+            exportButton.classList.remove('bg-gray-400');
+            if (!ready) { exportButton.classList.add('bg-gray-400', 'cursor-not-allowed', 'shadow-none'); }
         }
 
         // --- 1. Funciones de Carga y Guardado de LocalStorage ---
@@ -174,9 +218,13 @@
                 // Cargar saldos, si no existen, usar 0
                 pitiTotal = parseFloat(localStorage.getItem(PITI_KEY)) || 0;
                 emiTotal = parseFloat(localStorage.getItem(EMI_KEY)) || 0;
+                
+                // Cargar historial, si no existe, usar array vacío
+                const historyString = localStorage.getItem(HISTORY_KEY);
+                history = historyString ? JSON.parse(historyString) : [];
+
             } catch (e) {
                 console.error("Error al cargar de localStorage:", e);
-                // Si falla la carga (ej. storage lleno), los saldos se mantienen en 0.
             }
         }
 
@@ -185,6 +233,8 @@
                 // Guardar saldos en localStorage
                 localStorage.setItem(PITI_KEY, pitiTotal.toString());
                 localStorage.setItem(EMI_KEY, emiTotal.toString());
+                // Guardar historial
+                localStorage.setItem(HISTORY_KEY, JSON.stringify(history));
             } catch (e) {
                 console.error("Error al guardar en localStorage:", e);
                 showMessage("ERROR al guardar datos. Memoria del dispositivo llena o bloqueada.", true);
@@ -202,8 +252,6 @@
             loadBalances(); // Cargar datos persistentes
             updateUI();     // Mostrar datos cargados
             
-            authStatusEl.textContent = "Modo LOCAL y PERSISTENTE. Los datos se guardan en este dispositivo.";
-            
             isAppReady = true;
             updateButtonState(true); // Habilitar botones de acción
         }
@@ -216,6 +264,8 @@
             }
             
             const amountValue = parseFloat(amountInput.value);
+            const detailValue = detailInput.value.trim() || 'Sin detalle'; // OBTENER DETALLE
+
             if (isNaN(amountValue) || amountValue <= 0) {
                 showMessage("Por favor, ingresa un monto válido (mayor a 0).", true);
                 return;
@@ -230,19 +280,101 @@
             } else if (targetKey === 'emi') {
                 emiTotal += amountValue;
             }
+            
+            // Registrar Transacción
+            const transaction = {
+                id: Date.now(),
+                timestamp: new Date().toISOString(),
+                person: targetKey === 'piti' ? 'Piti' : 'Emi', // Usar mayúscula para el export
+                amount: amountValue,
+                detail: detailValue, // GUARDAR DETALLE
+                newPiti: pitiTotal,
+                newEmi: emiTotal
+            };
+            history.push(transaction);
 
-            saveBalances(); // Guardar en localStorage
+            saveBalances(); // Guardar saldos y historial en localStorage
             updateUI();     // Actualizar la interfaz
 
-            showMessage(`Se agregaron ${formatter.format(amountValue)} a ${targetKey === 'piti' ? 'Piti' : 'Emi'}.`, false);
-            amountInput.value = ''; // Limpiar el input
+            showMessage(`Se agregaron ${formatter.format(amountValue)} a ${transaction.person}. Detalle: ${detailValue}`, false);
+            amountInput.value = ''; // Limpiar el input de monto
+            detailInput.value = ''; // Limpiar el input de detalle
             
             updateButtonState(true); // Habilitar botones
         }
 
-        // --- 5. Asignación de Eventos ---
+        // --- 5. Función de Restablecimiento ---
+        function resetBalances() {
+            pitiTotal = 0;
+            emiTotal = 0;
+            history = []; // Borrar historial
+            saveBalances(); // Guardar el estado de 0
+            updateUI();
+            showMessage("Saldos e historial restablecidos a $0.", false);
+        }
+
+        // --- 6. Función de Exportación ---
+        function exportData() {
+            if (history.length === 0) {
+                showMessage("No hay transacciones registradas para exportar.", true);
+                return;
+            }
+
+            // 1. Encabezado del archivo
+            let fileContent = `--- REGISTRO DE SALDOS PITI & EMI ---\n`;
+            fileContent += `Fecha de Exportación: ${new Date().toLocaleString('es-CL')}\n`;
+            fileContent += `Saldo Actual de Piti: ${formatter.format(pitiTotal)}\n`;
+            fileContent += `Saldo Actual de Emi: ${formatter.format(emiTotal)}\n`;
+            fileContent += `-------------------------------------\n\n`;
+            
+            // Título para la lista de transacciones en el formato solicitado
+            fileContent += `--- HISTORIAL DE TRANSACCIONES (Fecha, Persona, Monto, Detalle) ---\n`;
+
+            // 2. Historial detallado en formato CSV simple: "1/12/2025, Emi, $5.000, helados"
+            history.forEach((tx) => {
+                const date = new Date(tx.timestamp).toLocaleDateString('es-CL', { 
+                    day: 'numeric', month: 'numeric', year: 'numeric' // Formato D/M/YYYY
+                });
+                // Obtener el monto formateado (ej: "$ 5.000")
+                const amountFormatted = formatter.format(tx.amount); 
+                
+                // Generar la línea en el formato solicitado
+                const line = `${date}, ${tx.person}, ${amountFormatted}, ${tx.detail}\n`;
+                fileContent += line;
+            });
+            fileContent += `-------------------------------------\n`;
+
+
+            // 3. Crear y descargar el archivo
+            const blob = new Blob([fileContent], { type: 'text/plain;charset=utf-8' });
+            const fileName = `Rastreador_Saldos_Piti_Emi_${new Date().toISOString().slice(0, 10)}.txt`;
+            
+            const a = document.createElement('a');
+            a.href = URL.createObjectURL(blob);
+            a.download = fileName;
+            document.body.appendChild(a);
+            a.click();
+            document.body.removeChild(a);
+            URL.revokeObjectURL(a.href);
+            
+            showMessage("Datos exportados correctamente.", false);
+        }
+
+        // --- 7. Asignación de Eventos ---
         addPitiButton.addEventListener('click', () => updateBalance('piti'));
         addEmiButton.addEventListener('click', () => updateBalance('emi'));
+        
+        // Eventos del Modal
+        resetButton.addEventListener('click', () => resetModal.classList.remove('hidden'));
+        cancelResetButton.addEventListener('click', () => resetModal.classList.add('hidden'));
+        confirmResetButton.addEventListener('click', () => {
+            resetBalances();
+            resetModal.classList.add('hidden');
+        });
+
+        // Evento de Exportar
+        exportButton.addEventListener('click', exportData);
+
 
         // Iniciar la aplicación
         setupLocalStorage();
