@@ -205,7 +205,8 @@
             try {
                 if (Object.keys(firebaseConfig).length === 0) {
                     console.error("Firebase config no está disponible.");
-                    authStatusEl.textContent = "Error: Configuración de Firebase no disponible.";
+                    // MENSAJE ACTUALIZADO: Más claro sobre el origen del error.
+                    authStatusEl.textContent = "ERROR: Configuración de Firebase no cargada (Problema de ambiente).";
                     updateButtonState(false);
                     return;
                 }
