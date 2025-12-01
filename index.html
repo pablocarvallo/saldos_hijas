@@ -7,13 +7,9 @@
     <meta name="apple-mobile-web-app-capable" content="yes">
     <title>Rastreador Piti & Emi</title>
     
-    <!-- --- NUEVOS ÍCONOS AÑADIDOS --- -->
-    <!-- Ícono para la pantalla de inicio de iOS (Apple Touch Icon - 180x180px) -->
-    <!-- Reemplaza esta URL por tu propia imagen PNG de 180x180px. -->
+    <!-- --- Íconos (Mantenidos) --- -->
     <link rel="apple-touch-icon" href="https://placehold.co/180x180/6495ED,FF69B4/FFFFFF/png?text=P+%26+E&font=sans" sizes="180x180">
-    <!-- Ícono genérico (Favicon) -->
     <link rel="icon" href="https://placehold.co/32x32/6495ED,FF69B4/FFFFFF/png?text=P+%26+E&font=sans" sizes="32x32">
-    <!-- --------------------------- -->
 
     <!-- Tailwind CSS CDN -->
     <script src="https://cdn.tailwindcss.com"></script>
@@ -111,13 +107,11 @@
             getAuth, 
             signInAnonymously, 
             signInWithCustomToken, 
-            onAuthStateChanged 
         } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-auth.js";
         import { 
             getFirestore, 
             doc, 
             setDoc, 
-            getDoc, 
             onSnapshot, 
             runTransaction,
             setLogLevel 
@@ -128,13 +122,15 @@
 
         // --- Variables de Entorno y Configuración de Firebase (proporcionadas por Canvas) ---
         const appId = typeof __app_id !== 'undefined' ? __app_id : 'default-app-id';
-        const firebaseConfig = JSON.parse(typeof __firebase_config !== 'undefined' ? __firebase_config : '{}');
+        // Verificar si la configuración es un objeto válido y no está vacío
+        const rawFirebaseConfig = typeof __firebase_config !== 'undefined' ? __firebase_config : '{}';
+        const firebaseConfig = JSON.parse(rawFirebaseConfig);
         const initialAuthToken = typeof __initial_auth_token !== 'undefined' ? __initial_auth_token : null;
 
-        let db;
-        let auth;
+        let db = null;
+        let auth = null;
         let userId = 'Autenticando...';
-        let isAppReady = false; // Estado para controlar si la app está lista para interactuar
+        let isAppReady = false; 
         
         // Referencias del DOM
         const pitiTotalEl = document.getElementById('piti-total');
@@ -150,8 +146,8 @@
         // Mostrar ID de la App
         appIdDisplay.textContent = appId;
 
-        // Rutas y colecciones
-        // Usamos una ruta pública para que el saldo sea compartido y persistente para esta app.
+        // Rutas y colecciones (Solo se usa en modo persistente)
+        // Ruta pública para que el saldo sea compartido y persistente
         const BALANCES_DOC_PATH = `artifacts/${appId}/public/data/balances/totals`;
         
         // Formatear número a formato de moneda local
@@ -203,19 +199,21 @@
         // --- 1. Inicialización y Autenticación de Firebase (Flujo Sincrónico Mejorado) ---
         async function setupFirebaseAndAuth() {
             try {
-                if (Object.keys(firebaseConfig).length === 0) {
-                    console.error("Firebase config no está disponible.");
-                    // MENSAJE ACTUALIZADO: Más claro sobre el origen del error.
-                    authStatusEl.textContent = "ERROR: Configuración de Firebase no cargada (Problema de ambiente).";
+                // Si la configuración es inválida, forzamos la detención
+                if (Object.keys(firebaseConfig).length === 0 || !firebaseConfig.apiKey) {
+                    console.error("Configuración de Firebase no disponible. La persistencia fallará.");
+                    authStatusEl.textContent = "ERROR: Configuración de Firebase no cargada (Persistencia Deshabilitada).";
+                    userIdDisplay.textContent = "BLOQUEADO";
                     updateButtonState(false);
-                    return;
+                    return; 
                 }
                 
+                // --- MODO PERSISTENTE (CON FIREBASE) ---
                 const app = initializeApp(firebaseConfig);
                 db = getFirestore(app);
                 auth = getAuth(app);
 
-                // Intento de autenticación (sincrónico, espera a que se complete)
+                // Autenticación
                 let userCredential;
                 if (initialAuthToken) {
                     userCredential = await signInWithCustomToken(auth, initialAuthToken);
@@ -223,23 +221,21 @@
                     userCredential = await signInAnonymously(auth);
                 }
 
-                // Si la autenticación es exitosa, el userCredential contiene el usuario.
                 const user = userCredential.user;
                 userId = user.uid;
                 authStatusEl.textContent = "Conectado y datos guardados de forma persistente.";
                 userIdDisplay.textContent = userId;
                 console.log("Usuario autenticado. UID:", userId);
 
-                // Marcar la aplicación como lista para interactuar y habilitar botones
                 isAppReady = true;
                 updateButtonState(true);
 
-                // Inicializar y escuchar los datos solo después de la autenticación exitosa.
+                // Iniciar el listener de datos persistentes
                 initDataListener();
                 
             } catch (error) {
                 console.error("Error al inicializar o autenticar Firebase:", error);
-                authStatusEl.textContent = "Error fatal al iniciar la aplicación. Los datos no se guardarán.";
+                authStatusEl.textContent = "Error fatal al iniciar la persistencia. Botones inactivos.";
                 userIdDisplay.textContent = "ERROR";
                 updateButtonState(false);
             }
@@ -247,7 +243,7 @@
 
         // --- 2. Listener de Datos en Tiempo Real (onSnapshot) ---
         function initDataListener() {
-            if (!db) return; // Asegurar que db esté inicializado
+            if (!db) return; 
 
             const docRef = doc(db, BALANCES_DOC_PATH);
 
@@ -260,7 +256,8 @@
                     
                     pitiTotalEl.textContent = formatter.format(pitiTotal);
                     emiTotalEl.textContent = formatter.format(emiTotal);
-                    console.log(`Datos actualizados. Piti: ${pitiTotal}, Emi: ${emiTotal}`);
+                    
+                    console.log(`Datos persistentes actualizados. Piti: ${pitiTotal}, Emi: ${emiTotal}`);
                 } else {
                     // El documento no existe: Inicializarlo con 0
                     const initialData = { pitiTotal: 0, emiTotal: 0, lastUpdate: new Date().toISOString() };
@@ -279,10 +276,9 @@
 
         // --- 3. Función para actualizar el saldo (con Transacciones) ---
         async function updateBalance(target) {
-            // DOBLE VERIFICACIÓN: Si la aplicación no está lista, salimos
+            // VERIFICACIÓN: Si la aplicación no está lista para guardar, salimos
             if (!isAppReady || !db || !auth.currentUser) {
-                // Mensaje de error ajustado.
-                showMessage("Error: La aplicación se está cargando o hay un error de conexión. Por favor, espera unos segundos.", true);
+                showMessage("Error: La persistencia no está activa. No se puede guardar.", true);
                 return;
             }
 
@@ -299,16 +295,16 @@
                 // Usamos runTransaction para asegurar que la lectura y la escritura sean atómicas.
                 await runTransaction(db, async (transaction) => {
                     const sfDoc = await transaction.get(docRef);
+                    
                     if (!sfDoc.exists()) {
                         // Si el documento no existe, lo inicializamos dentro de la transacción.
                         transaction.set(docRef, { pitiTotal: 0, emiTotal: 0, lastUpdate: new Date().toISOString() });
-                        // Luego volvemos a intentar la transacción (Firestore la reintentará automáticamente).
+                        // Se relanza el error para que Firestore reintente la transacción.
                         throw new Error("Documento inicializado, reintentando..."); 
                     }
 
                     const newBalance = (sfDoc.data()[target] || 0) + amountValue;
                     
-                    // Crear el objeto de actualización
                     const updateObject = {
                         [target]: newBalance,
                         lastUpdate: new Date().toISOString()
@@ -321,12 +317,10 @@
                 amountInput.value = ''; // Limpiar el input
 
             } catch (e) {
-                // Si el error fue la inicialización, la transacción se reintentará automáticamente.
-                // Si es un error de conexión grave, lo mostramos.
                 if (e.message && e.message.includes("Documento inicializado")) {
                     console.log(e.message);
                 } else {
-                    console.error("Error al actualizar el saldo:", e);
+                    console.error("Error al actualizar el saldo persistente:", e);
                     showMessage("Error al actualizar el saldo. Intenta de nuevo.", true);
                 }
 
