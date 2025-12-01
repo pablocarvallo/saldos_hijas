@@ -3,7 +3,18 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <!-- ¡IMPORTANTE para iOS! Esta meta tag elimina la barra de Safari y la convierte en una app de pantalla completa. -->
+    <meta name="apple-mobile-web-app-capable" content="yes">
     <title>Rastreador Piti & Emi</title>
+    
+    <!-- --- NUEVOS ÍCONOS AÑADIDOS --- -->
+    <!-- Ícono para la pantalla de inicio de iOS (Apple Touch Icon - 180x180px) -->
+    <!-- Reemplaza esta URL por tu propia imagen PNG de 180x180px. -->
+    <link rel="apple-touch-icon" href="https://placehold.co/180x180/6495ED,FF69B4/FFFFFF/png?text=P+%26+E&font=sans" sizes="180x180">
+    <!-- Ícono genérico (Favicon) -->
+    <link rel="icon" href="https://placehold.co/32x32/6495ED,FF69B4/FFFFFF/png?text=P+%26+E&font=sans" sizes="32x32">
+    <!-- --------------------------- -->
+
     <!-- Tailwind CSS CDN -->
     <script src="https://cdn.tailwindcss.com"></script>
     <!-- Configuración para usar un font similar a iOS (Inter) -->
@@ -23,8 +34,14 @@
         .action-button {
             transition: all 0.15s ease-in-out;
         }
-        .action-button:active {
+        .action-button:active:not(:disabled) {
             transform: scale(0.98);
+        }
+        /* Estilo para botones deshabilitados */
+        .action-button:disabled {
+            cursor: not-allowed;
+            opacity: 0.6;
+            filter: grayscale(0.5);
         }
     </style>
 </head>
@@ -34,7 +51,7 @@
         <!-- Título principal -->
         <header class="mb-8 text-center">
             <h1 class="text-3xl font-extrabold text-gray-900 tracking-tight">Rastreador de Saldos</h1>
-            <p id="auth-status" class="text-xs text-gray-500 mt-1"></p>
+            <p id="auth-status" class="text-xs text-gray-500 mt-1">Cargando...</p>
         </header>
 
         <!-- Contenedor de Saldos (Cards) -->
@@ -67,10 +84,11 @@
 
             <!-- Botones de Acción -->
             <div class="flex space-x-3 pt-2">
-                <button id="add-piti" class="action-button flex-1 py-3 px-4 bg-blue-600 text-white font-semibold rounded-xl hover:bg-blue-700 focus:outline-none focus:ring-4 focus:ring-blue-500/50 shadow-lg shadow-blue-500/30">
+                <!-- Los botones se deshabilitan al inicio con JS -->
+                <button id="add-piti" class="action-button flex-1 py-3 px-4 bg-gray-400 text-white font-semibold rounded-xl focus:outline-none focus:ring-4 focus:ring-blue-500/50 shadow-lg shadow-blue-500/30" disabled>
                     Añadir a Piti
                 </button>
-                <button id="add-emi" class="action-button flex-1 py-3 px-4 bg-pink-600 text-white font-semibold rounded-xl hover:bg-pink-700 focus:outline-none focus:ring-4 focus:ring-pink-500/50 shadow-lg shadow-pink-500/30">
+                <button id="add-emi" class="action-button flex-1 py-3 px-4 bg-gray-400 text-white font-semibold rounded-xl focus:outline-none focus:ring-4 focus:ring-pink-500/50 shadow-lg shadow-pink-500/30" disabled>
                     Añadir a Emi
                 </button>
             </div>
@@ -116,6 +134,7 @@
         let db;
         let auth;
         let userId = 'Autenticando...';
+        let isAppReady = false; // Estado para controlar si la app está lista para interactuar
         
         // Referencias del DOM
         const pitiTotalEl = document.getElementById('piti-total');
@@ -155,12 +174,39 @@
             }, 3000);
         }
 
+        // Función para habilitar/deshabilitar botones y cambiar su estilo
+        function updateButtonState(ready) {
+            addPitiButton.disabled = !ready;
+            addEmiButton.disabled = !ready;
+            
+            // Estilos para Piti
+            addPitiButton.classList.remove('bg-blue-600', 'hover:bg-blue-700', 'bg-gray-400');
+            if (ready) {
+                addPitiButton.classList.add('bg-blue-600', 'hover:bg-blue-700', 'shadow-blue-500/30');
+                addPitiButton.classList.remove('bg-gray-400', 'cursor-not-allowed', 'shadow-none');
+            } else {
+                addPitiButton.classList.add('bg-gray-400', 'cursor-not-allowed', 'shadow-none');
+                addPitiButton.classList.remove('bg-blue-600', 'hover:bg-blue-700', 'shadow-blue-500/30');
+            }
+
+            // Estilos para Emi
+            addEmiButton.classList.remove('bg-pink-600', 'hover:bg-pink-700', 'bg-gray-400');
+            if (ready) {
+                addEmiButton.classList.add('bg-pink-600', 'hover:bg-pink-700', 'shadow-pink-500/30');
+                addEmiButton.classList.remove('bg-gray-400', 'cursor-not-allowed', 'shadow-none');
+            } else {
+                addEmiButton.classList.add('bg-gray-400', 'cursor-not-allowed', 'shadow-none');
+                addEmiButton.classList.remove('bg-pink-600', 'hover:bg-pink-700', 'shadow-pink-500/30');
+            }
+        }
+
         // --- 1. Inicialización y Autenticación de Firebase ---
         async function setupFirebaseAndAuth() {
             try {
                 if (Object.keys(firebaseConfig).length === 0) {
                     console.error("Firebase config no está disponible.");
                     authStatusEl.textContent = "Error: Configuración de Firebase no disponible.";
+                    updateButtonState(false);
                     return;
                 }
                 
@@ -170,13 +216,15 @@
 
                 // Autenticación: Usar token personalizado si está disponible, sino anónima.
                 await new Promise(resolve => {
-                    onAuthStateChanged(auth, async (user) => {
+                    // Escuchar el estado de autenticación
+                    const unsubscribe = onAuthStateChanged(auth, async (user) => {
+                        unsubscribe(); // Dejar de escuchar después del primer cambio importante
+                        
                         if (user) {
                             userId = user.uid;
                             authStatusEl.textContent = "Conectado y datos guardados de forma persistente.";
                             userIdDisplay.textContent = userId;
                             console.log("Usuario autenticado. UID:", userId);
-                            resolve();
                         } else {
                             try {
                                 if (initialAuthToken) {
@@ -184,21 +232,27 @@
                                 } else {
                                     await signInAnonymously(auth);
                                 }
+                                // onAuthStateChanged se disparará de nuevo con el usuario autenticado/anónimo
                             } catch (error) {
                                 console.error("Error en la autenticación:", error);
                                 authStatusEl.textContent = "Error de autenticación. Los datos no se guardarán.";
                                 userIdDisplay.textContent = "ANÓNIMO (Error)";
-                                resolve(); // Continuar incluso con error de auth
                             }
                         }
+
+                        // Marcar la aplicación como lista para interactuar y habilitar botones
+                        isAppReady = true;
+                        updateButtonState(true);
+                        resolve();
                     });
                 });
 
-                // Inicializar y escuchar los datos solo después de la autenticación
+                // Inicializar y escuchar los datos solo después de que la autenticación haya completado su primer ciclo
                 initDataListener();
             } catch (error) {
                 console.error("Error al inicializar Firebase:", error);
                 authStatusEl.textContent = "Error fatal al iniciar la aplicación.";
+                updateButtonState(false);
             }
         }
 
@@ -236,8 +290,9 @@
 
         // --- 3. Función para actualizar el saldo (con Transacciones) ---
         async function updateBalance(target) {
-            if (!db || !auth.currentUser) {
-                showMessage("La aplicación se está cargando o hay un error de conexión.", true);
+            // DOBLE VERIFICACIÓN: Si la aplicación no está lista, salimos
+            if (!isAppReady || !db || !auth.currentUser) {
+                showMessage("Error: La aplicación no está completamente lista o la conexión es inestable. Por favor, espera o recarga.", true);
                 return;
             }
 
@@ -248,14 +303,17 @@
             }
 
             const docRef = doc(db, BALANCES_DOC_PATH);
+            updateButtonState(false); // Deshabilitar temporalmente durante la transacción
 
             try {
                 // Usamos runTransaction para asegurar que la lectura y la escritura sean atómicas.
-                // Esto previene condiciones de carrera si dos usuarios actualizan al mismo tiempo.
                 await runTransaction(db, async (transaction) => {
                     const sfDoc = await transaction.get(docRef);
                     if (!sfDoc.exists()) {
-                        throw "Documento no existe. Intenta recargar la página.";
+                        // Si el documento no existe, lo inicializamos dentro de la transacción.
+                        transaction.set(docRef, { pitiTotal: 0, emiTotal: 0, lastUpdate: new Date().toISOString() });
+                        // Luego volvemos a intentar la transacción (Firestore la reintentará automáticamente).
+                        throw new Error("Documento inicializado, reintentando..."); 
                     }
 
                     const newBalance = (sfDoc.data()[target] || 0) + amountValue;
@@ -273,8 +331,17 @@
                 amountInput.value = ''; // Limpiar el input
 
             } catch (e) {
-                console.error("Error en la transacción (actualización de saldo):", e);
-                showMessage("Error al actualizar el saldo. Intenta de nuevo.", true);
+                // Si el error fue la inicialización, la transacción se reintentará automáticamente.
+                // Si es un error de conexión grave, lo mostramos.
+                if (e.message && e.message.includes("Documento inicializado")) {
+                    console.log(e.message);
+                } else {
+                    console.error("Error al actualizar el saldo:", e);
+                    showMessage("Error al actualizar el saldo. Intenta de nuevo.", true);
+                }
+
+            } finally {
+                updateButtonState(true); // Habilitar de nuevo al finalizar
             }
         }
 
