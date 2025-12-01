@@ -47,7 +47,8 @@
         <!-- Título principal -->
         <header class="mb-8 text-center">
             <h1 class="text-3xl font-extrabold text-gray-900 tracking-tight">Rastreador de Saldos</h1>
-            <p id="auth-status" class="text-xs text-gray-500 mt-1">Cargando...</p>
+            <!-- El estado de autenticación ahora indica el modo LocalStorage -->
+            <p id="auth-status" class="text-xs text-red-600 font-semibold mt-1">Cargando...</p>
         </header>
 
         <!-- Contenedor de Saldos (Cards) -->
@@ -95,41 +96,19 @@
         
         <!-- Contenedor para mostrar el ID de usuario -->
         <div class="mt-8 text-center text-xs text-gray-500 p-3 bg-gray-200 rounded-lg">
-            <p>ID de la aplicación (para persistencia): <span id="app-id-display" class="font-mono text-gray-700">Cargando...</span></p>
-            <p>ID de Usuario: <span id="user-id-display" class="font-mono text-gray-700">Autenticando...</span></p>
+            <p>Tipo de Persistencia: <span id="app-id-display" class="font-mono text-gray-700">LOCAL</span></p>
+            <p>ID de Dispositivo: <span id="user-id-display" class="font-mono text-gray-700">Persistencia local activa</span></p>
         </div>
     </div>
 
-    <!-- Firebase SDKs -->
+    <!-- Lógica de la Aplicación con LocalStorage (No requiere Firebase) -->
     <script type="module">
-        import { initializeApp } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-app.js";
-        import { 
-            getAuth, 
-            signInAnonymously, 
-            signInWithCustomToken, 
-        } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-auth.js";
-        import { 
-            getFirestore, 
-            doc, 
-            setDoc, 
-            onSnapshot, 
-            runTransaction,
-            setLogLevel 
-        } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-firestore.js";
+        // --- Variables de Estado y Configuración de LocalStorage ---
+        const PITI_KEY = 'pitiBalance';
+        const EMI_KEY = 'emiBalance';
 
-        // Establecer el nivel de registro de Firestore a Debug
-        setLogLevel('Debug');
-
-        // --- Variables de Entorno y Configuración de Firebase (proporcionadas por Canvas) ---
-        const appId = typeof __app_id !== 'undefined' ? __app_id : 'default-app-id';
-        // Verificar si la configuración es un objeto válido y no está vacío
-        const rawFirebaseConfig = typeof __firebase_config !== 'undefined' ? __firebase_config : '{}';
-        const firebaseConfig = JSON.parse(rawFirebaseConfig);
-        const initialAuthToken = typeof __initial_auth_token !== 'undefined' ? __initial_auth_token : null;
-
-        let db = null;
-        let auth = null;
-        let userId = 'Autenticando...';
+        let pitiTotal = 0;
+        let emiTotal = 0;
         let isAppReady = false; 
         
         // Referencias del DOM
@@ -143,13 +122,6 @@
         const appIdDisplay = document.getElementById('app-id-display');
         const userIdDisplay = document.getElementById('user-id-display');
 
-        // Mostrar ID de la App
-        appIdDisplay.textContent = appId;
-
-        // Rutas y colecciones (Solo se usa en modo persistente)
-        // Ruta pública para que el saldo sea compartido y persistente
-        const BALANCES_DOC_PATH = `artifacts/${appId}/public/data/balances/totals`;
-        
         // Formatear número a formato de moneda local
         const formatter = new Intl.NumberFormat('es-CL', {
             style: 'currency',
@@ -196,145 +168,84 @@
             }
         }
 
-        // --- 1. Inicialización y Autenticación de Firebase (Flujo Sincrónico Mejorado) ---
-        async function setupFirebaseAndAuth() {
+        // --- 1. Funciones de Carga y Guardado de LocalStorage ---
+        function loadBalances() {
             try {
-                // Si la configuración es inválida, forzamos la detención
-                if (Object.keys(firebaseConfig).length === 0 || !firebaseConfig.apiKey) {
-                    console.error("Configuración de Firebase no disponible. La persistencia fallará.");
-                    authStatusEl.textContent = "ERROR: Configuración de Firebase no cargada (Persistencia Deshabilitada).";
-                    userIdDisplay.textContent = "BLOQUEADO";
-                    updateButtonState(false);
-                    return; 
-                }
-                
-                // --- MODO PERSISTENTE (CON FIREBASE) ---
-                const app = initializeApp(firebaseConfig);
-                db = getFirestore(app);
-                auth = getAuth(app);
-
-                // Autenticación
-                let userCredential;
-                if (initialAuthToken) {
-                    userCredential = await signInWithCustomToken(auth, initialAuthToken);
-                } else {
-                    userCredential = await signInAnonymously(auth);
-                }
-
-                const user = userCredential.user;
-                userId = user.uid;
-                authStatusEl.textContent = "Conectado y datos guardados de forma persistente.";
-                userIdDisplay.textContent = userId;
-                console.log("Usuario autenticado. UID:", userId);
-
-                isAppReady = true;
-                updateButtonState(true);
-
-                // Iniciar el listener de datos persistentes
-                initDataListener();
-                
-            } catch (error) {
-                console.error("Error al inicializar o autenticar Firebase:", error);
-                authStatusEl.textContent = "Error fatal al iniciar la persistencia. Botones inactivos.";
-                userIdDisplay.textContent = "ERROR";
-                updateButtonState(false);
+                // Cargar saldos, si no existen, usar 0
+                pitiTotal = parseFloat(localStorage.getItem(PITI_KEY)) || 0;
+                emiTotal = parseFloat(localStorage.getItem(EMI_KEY)) || 0;
+            } catch (e) {
+                console.error("Error al cargar de localStorage:", e);
+                // Si falla la carga (ej. storage lleno), los saldos se mantienen en 0.
             }
         }
 
-        // --- 2. Listener de Datos en Tiempo Real (onSnapshot) ---
-        function initDataListener() {
-            if (!db) return; 
-
-            const docRef = doc(db, BALANCES_DOC_PATH);
-
-            onSnapshot(docRef, async (docSnapshot) => {
-                if (docSnapshot.exists()) {
-                    // Datos encontrados: Actualizar la UI
-                    const data = docSnapshot.data();
-                    const pitiTotal = data.pitiTotal || 0;
-                    const emiTotal = data.emiTotal || 0;
-                    
-                    pitiTotalEl.textContent = formatter.format(pitiTotal);
-                    emiTotalEl.textContent = formatter.format(emiTotal);
-                    
-                    console.log(`Datos persistentes actualizados. Piti: ${pitiTotal}, Emi: ${emiTotal}`);
-                } else {
-                    // El documento no existe: Inicializarlo con 0
-                    const initialData = { pitiTotal: 0, emiTotal: 0, lastUpdate: new Date().toISOString() };
-                    try {
-                        await setDoc(docRef, initialData);
-                        console.log("Documento de balances inicializado en Firestore.");
-                    } catch (e) {
-                        console.error("Error al inicializar el documento:", e);
-                    }
-                }
-            }, (error) => {
-                console.error("Error en el listener de Firestore:", error);
-                showMessage("Error al cargar los datos en tiempo real.", true);
-            });
+        function saveBalances() {
+            try {
+                // Guardar saldos en localStorage
+                localStorage.setItem(PITI_KEY, pitiTotal.toString());
+                localStorage.setItem(EMI_KEY, emiTotal.toString());
+            } catch (e) {
+                console.error("Error al guardar en localStorage:", e);
+                showMessage("ERROR al guardar datos. Memoria del dispositivo llena o bloqueada.", true);
+            }
+        }
+        
+        // --- 2. Función para actualizar la UI ---
+        function updateUI() {
+            pitiTotalEl.textContent = formatter.format(pitiTotal);
+            emiTotalEl.textContent = formatter.format(emiTotal);
         }
 
-        // --- 3. Función para actualizar el saldo (con Transacciones) ---
-        async function updateBalance(target) {
-            // VERIFICACIÓN: Si la aplicación no está lista para guardar, salimos
-            if (!isAppReady || !db || !auth.currentUser) {
-                showMessage("Error: La persistencia no está activa. No se puede guardar.", true);
+        // --- 3. Inicialización de la Aplicación ---
+        function setupLocalStorage() {
+            loadBalances(); // Cargar datos persistentes
+            updateUI();     // Mostrar datos cargados
+            
+            authStatusEl.textContent = "Modo LOCAL y PERSISTENTE. Los datos se guardan en este dispositivo.";
+            
+            isAppReady = true;
+            updateButtonState(true); // Habilitar botones de acción
+        }
+
+        // --- 4. Función para actualizar el saldo (Localmente) ---
+        function updateBalance(targetKey) {
+            if (!isAppReady) { 
+                showMessage("Error: La aplicación no está lista.", true);
                 return;
             }
-
+            
             const amountValue = parseFloat(amountInput.value);
             if (isNaN(amountValue) || amountValue <= 0) {
                 showMessage("Por favor, ingresa un monto válido (mayor a 0).", true);
                 return;
             }
 
-            const docRef = doc(db, BALANCES_DOC_PATH);
-            updateButtonState(false); // Deshabilitar temporalmente durante la transacción
+            // Deshabilitar botones (feedback visual rápido)
+            updateButtonState(false);
 
-            try {
-                // Usamos runTransaction para asegurar que la lectura y la escritura sean atómicas.
-                await runTransaction(db, async (transaction) => {
-                    const sfDoc = await transaction.get(docRef);
-                    
-                    if (!sfDoc.exists()) {
-                        // Si el documento no existe, lo inicializamos dentro de la transacción.
-                        transaction.set(docRef, { pitiTotal: 0, emiTotal: 0, lastUpdate: new Date().toISOString() });
-                        // Se relanza el error para que Firestore reintente la transacción.
-                        throw new Error("Documento inicializado, reintentando..."); 
-                    }
-
-                    const newBalance = (sfDoc.data()[target] || 0) + amountValue;
-                    
-                    const updateObject = {
-                        [target]: newBalance,
-                        lastUpdate: new Date().toISOString()
-                    };
-                    
-                    transaction.update(docRef, updateObject);
-                });
-
-                showMessage(`Se agregaron ${formatter.format(amountValue)} a ${target === 'pitiTotal' ? 'Piti' : 'Emi'}.`, false);
-                amountInput.value = ''; // Limpiar el input
-
-            } catch (e) {
-                if (e.message && e.message.includes("Documento inicializado")) {
-                    console.log(e.message);
-                } else {
-                    console.error("Error al actualizar el saldo persistente:", e);
-                    showMessage("Error al actualizar el saldo. Intenta de nuevo.", true);
-                }
-
-            } finally {
-                updateButtonState(true); // Habilitar de nuevo al finalizar
+            // Actualizar saldos
+            if (targetKey === 'piti') {
+                pitiTotal += amountValue;
+            } else if (targetKey === 'emi') {
+                emiTotal += amountValue;
             }
+
+            saveBalances(); // Guardar en localStorage
+            updateUI();     // Actualizar la interfaz
+
+            showMessage(`Se agregaron ${formatter.format(amountValue)} a ${targetKey === 'piti' ? 'Piti' : 'Emi'}.`, false);
+            amountInput.value = ''; // Limpiar el input
+            
+            updateButtonState(true); // Habilitar botones
         }
 
-        // --- 4. Asignación de Eventos ---
-        addPitiButton.addEventListener('click', () => updateBalance('pitiTotal'));
-        addEmiButton.addEventListener('click', () => updateBalance('emiTotal'));
+        // --- 5. Asignación de Eventos ---
+        addPitiButton.addEventListener('click', () => updateBalance('piti'));
+        addEmiButton.addEventListener('click', () => updateBalance('emi'));
 
         // Iniciar la aplicación
-        setupFirebaseAndAuth();
+        setupLocalStorage();
 
     </script>
 </body>
