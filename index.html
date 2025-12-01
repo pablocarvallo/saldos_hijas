@@ -200,7 +200,7 @@
             }
         }
 
-        // --- 1. Inicialización y Autenticación de Firebase ---
+        // --- 1. Inicialización y Autenticación de Firebase (Flujo Sincrónico Mejorado) ---
         async function setupFirebaseAndAuth() {
             try {
                 if (Object.keys(firebaseConfig).length === 0) {
@@ -214,44 +214,32 @@
                 db = getFirestore(app);
                 auth = getAuth(app);
 
-                // Autenticación: Usar token personalizado si está disponible, sino anónima.
-                await new Promise(resolve => {
-                    // Escuchar el estado de autenticación
-                    const unsubscribe = onAuthStateChanged(auth, async (user) => {
-                        unsubscribe(); // Dejar de escuchar después del primer cambio importante
-                        
-                        if (user) {
-                            userId = user.uid;
-                            authStatusEl.textContent = "Conectado y datos guardados de forma persistente.";
-                            userIdDisplay.textContent = userId;
-                            console.log("Usuario autenticado. UID:", userId);
-                        } else {
-                            try {
-                                if (initialAuthToken) {
-                                    await signInWithCustomToken(auth, initialAuthToken);
-                                } else {
-                                    await signInAnonymously(auth);
-                                }
-                                // onAuthStateChanged se disparará de nuevo con el usuario autenticado/anónimo
-                            } catch (error) {
-                                console.error("Error en la autenticación:", error);
-                                authStatusEl.textContent = "Error de autenticación. Los datos no se guardarán.";
-                                userIdDisplay.textContent = "ANÓNIMO (Error)";
-                            }
-                        }
+                // Intento de autenticación (sincrónico, espera a que se complete)
+                let userCredential;
+                if (initialAuthToken) {
+                    userCredential = await signInWithCustomToken(auth, initialAuthToken);
+                } else {
+                    userCredential = await signInAnonymously(auth);
+                }
 
-                        // Marcar la aplicación como lista para interactuar y habilitar botones
-                        isAppReady = true;
-                        updateButtonState(true);
-                        resolve();
-                    });
-                });
+                // Si la autenticación es exitosa, el userCredential contiene el usuario.
+                const user = userCredential.user;
+                userId = user.uid;
+                authStatusEl.textContent = "Conectado y datos guardados de forma persistente.";
+                userIdDisplay.textContent = userId;
+                console.log("Usuario autenticado. UID:", userId);
 
-                // Inicializar y escuchar los datos solo después de que la autenticación haya completado su primer ciclo
+                // Marcar la aplicación como lista para interactuar y habilitar botones
+                isAppReady = true;
+                updateButtonState(true);
+
+                // Inicializar y escuchar los datos solo después de la autenticación exitosa.
                 initDataListener();
+                
             } catch (error) {
-                console.error("Error al inicializar Firebase:", error);
-                authStatusEl.textContent = "Error fatal al iniciar la aplicación.";
+                console.error("Error al inicializar o autenticar Firebase:", error);
+                authStatusEl.textContent = "Error fatal al iniciar la aplicación. Los datos no se guardarán.";
+                userIdDisplay.textContent = "ERROR";
                 updateButtonState(false);
             }
         }
@@ -292,7 +280,8 @@
         async function updateBalance(target) {
             // DOBLE VERIFICACIÓN: Si la aplicación no está lista, salimos
             if (!isAppReady || !db || !auth.currentUser) {
-                showMessage("Error: La aplicación no está completamente lista o la conexión es inestable. Por favor, espera o recarga.", true);
+                // Mensaje de error ajustado.
+                showMessage("Error: La aplicación se está cargando o hay un error de conexión. Por favor, espera unos segundos.", true);
                 return;
             }
 
