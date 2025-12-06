@@ -7,9 +7,9 @@
     <meta name="apple-mobile-web-app-capable" content="yes">
     <title>Rastreador Piti & Emi</title>
     
-    <!-- --- Íconos (Actualizado para representar 'hijas.png' con un placeholder) --- -->
-    <link rel="apple-touch-icon" href="hijas.png">
-    <link rel="icon" href="hijas.png">
+    <!-- --- Íconos (Actualizado para representar 'gas.png' con un placeholder) --- -->
+    <link rel="apple-touch-icon" href="hijas.png">
+    <link rel="icon" href="hijas.png">
 
     <!-- Tailwind CSS CDN -->
     <script src="https://cdn.tailwindcss.com"></script>
@@ -125,7 +125,7 @@
             <p id="message-box" class="text-sm text-center pt-2 h-6"></p>
         </div>
         
-        <!-- Contenedor de Historial de Transacciones (NUEVO) -->
+        <!-- Contenedor de Historial de Transacciones -->
         <div class="mt-8">
             <h2 class="text-xl font-semibold text-gray-700 mb-3">Historial Reciente</h2>
             <div id="history-list" class="space-y-3">
@@ -141,7 +141,7 @@
         </div>
     </div>
 
-    <!-- Modal de Confirmación (Oculto por defecto) -->
+    <!-- Modal de Confirmación de Restablecimiento (Oculto por defecto) -->
     <div id="reset-modal" class="modal-overlay fixed inset-0 z-50 flex items-center justify-center hidden">
         <div class="modal-content bg-white p-6 rounded-xl w-11/12 max-w-sm">
             <h3 class="text-xl font-bold text-gray-800 mb-3">Confirmar Restablecimiento</h3>
@@ -152,6 +152,23 @@
                 </button>
                 <button id="confirm-reset" class="py-2 px-4 bg-red-600 text-white font-semibold rounded-lg hover:bg-red-700 transition">
                     Sí, Restablecer a $0
+                </button>
+            </div>
+        </div>
+    </div>
+    
+    <!-- Modal de Confirmación de Eliminación de Transacción (NUEVO) -->
+    <div id="delete-tx-modal" class="modal-overlay fixed inset-0 z-50 flex items-center justify-center hidden">
+        <div class="modal-content bg-white p-6 rounded-xl w-11/12 max-w-sm">
+            <h3 class="text-xl font-bold text-gray-800 mb-3">Confirmar Eliminación de Registro</h3>
+            <p class="text-gray-600 mb-6">¿Estás seguro de que deseas eliminar este registro?</p>
+            <p id="tx-details-to-delete" class="text-sm font-semibold text-gray-700 bg-gray-100 p-3 rounded-lg mb-6 truncate">Detalle de la transacción...</p>
+            <div class="flex justify-end space-x-3">
+                <button id="cancel-delete-tx" class="py-2 px-4 text-gray-600 font-medium rounded-lg hover:bg-gray-100 transition">
+                    Cancelar
+                </button>
+                <button id="confirm-delete-tx" class="py-2 px-4 bg-red-600 text-white font-semibold rounded-lg hover:bg-red-700 transition">
+                    Sí, Eliminar
                 </button>
             </div>
         </div>
@@ -168,6 +185,7 @@
         let emiTotal = 0;
         let history = []; // Almacena el historial de transacciones
         let isAppReady = false; 
+        let txToDeleteId = null; // NUEVA variable para guardar el ID de la transacción a borrar temporalmente
         
         // Referencias del DOM
         const pitiTotalEl = document.getElementById('piti-total');
@@ -179,11 +197,17 @@
         const resetButton = document.getElementById('reset-button');
         const exportButton = document.getElementById('export-button');
         const messageBox = document.getElementById('message-box');
-        const authStatusEl = document.getElementById('auth-status');
+        // Modales de Restablecimiento
         const resetModal = document.getElementById('reset-modal');
         const confirmResetButton = document.getElementById('confirm-reset');
         const cancelResetButton = document.getElementById('cancel-reset');
-        const historyListEl = document.getElementById('history-list'); // NUEVA Referencia
+        // Modales de Eliminación (NUEVAS Referencias)
+        const deleteTxModal = document.getElementById('delete-tx-modal');
+        const confirmDeleteTxButton = document.getElementById('confirm-delete-tx');
+        const cancelDeleteTxButton = document.getElementById('cancel-delete-tx');
+        const txDetailsToDeleteEl = document.getElementById('tx-details-to-delete');
+
+        const historyListEl = document.getElementById('history-list'); // Referencia al contenedor del historial
 
         // Formatear número a formato de moneda local
         const formatter = new Intl.NumberFormat('es-CL', {
@@ -193,7 +217,7 @@
             maximumFractionDigits: 0,
         });
         
-        // --- 1. Funciones de Carga y Guardado de LocalStorage (Sin cambios) ---
+        // --- 1. Funciones de Carga y Guardado de LocalStorage ---
         function loadBalances() {
             try {
                 // Cargar saldos, si no existen, usar 0
@@ -222,7 +246,7 @@
             }
         }
         
-        // --- 2. Función para mostrar mensajes temporales en la UI (Sin cambios) ---
+        // --- 2. Función para mostrar mensajes temporales en la UI ---
         function showMessage(text, isError = false) {
             messageBox.textContent = text;
             messageBox.className = isError 
@@ -234,7 +258,7 @@
             }, 3000);
         }
 
-        // --- 3. Función para habilitar/deshabilitar botones (Sin cambios) ---
+        // --- 3. Función para habilitar/deshabilitar botones ---
         function updateButtonState(ready) {
             addPitiButton.disabled = !ready;
             addEmiButton.disabled = !ready;
@@ -258,7 +282,7 @@
             if (!ready) { exportButton.classList.add('bg-gray-400', 'cursor-not-allowed', 'shadow-none'); }
         }
 
-        // --- 4. Función para renderizar el historial (NUEVO) ---
+        // --- 4. Función para renderizar el historial ---
         function renderHistory() {
             historyListEl.innerHTML = ''; // Limpiar la lista actual
             
@@ -288,13 +312,22 @@
                 item.className = `card p-3 rounded-xl flex items-center justify-between transition duration-150 ${borderClass}`;
                 
                 item.innerHTML = `
-                    <div class="flex flex-col space-y-0.5">
+                    <div class="flex flex-col space-y-0.5 min-w-0 flex-1 pr-2">
                         <p class="text-xs text-gray-500 font-medium">${date}</p>
-                        <p class="text-base font-semibold text-gray-800">${tx.detail}</p>
+                        <!-- 'truncate' para evitar que el detalle muy largo desborde -->
+                        <p class="text-base font-semibold text-gray-800 truncate">${tx.detail}</p>
                     </div>
-                    <div class="text-right">
-                        <p class="text-lg font-bold ${colorClass}">+${amountFormatted}</p>
-                        <p class="text-sm font-semibold ${isPiti ? 'text-blue-500' : 'text-pink-500'}">${tx.person}</p>
+                    <div class="text-right flex items-center space-x-3">
+                        <div class="flex flex-col items-end">
+                            <p class="text-lg font-bold ${colorClass}">+${amountFormatted}</p>
+                            <p class="text-sm font-semibold ${isPiti ? 'text-blue-500' : 'text-pink-500'}">${tx.person}</p>
+                        </div>
+                        <!-- Botón de Eliminar (Trash Icon) con el ID como data attribute -->
+                        <button data-id="${tx.id}" data-detail="${tx.detail}" data-amount="${amountFormatted}" data-person="${tx.person}" class="delete-tx-button p-2 text-gray-400 hover:text-red-500 transition duration-150 rounded-full hover:bg-red-50" aria-label="Eliminar registro">
+                            <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg">
+                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16"></path>
+                            </svg>
+                        </button>
                     </div>
                 `;
                 
@@ -302,15 +335,15 @@
             });
         }
 
-        // --- 5. Función para actualizar la UI (Actualizada para incluir renderHistory) ---
+        // --- 5. Función para actualizar la UI ---
         function updateUI() {
             pitiTotalEl.textContent = formatter.format(pitiTotal);
             emiTotalEl.textContent = formatter.format(emiTotal);
-            renderHistory(); // Llama a la nueva función
+            renderHistory(); // Llama a la función de renderizado de historial
         }
 
 
-        // --- 6. Inicialización de la Aplicación (Sin cambios, llama a updateUI) ---
+        // --- 6. Inicialización de la Aplicación ---
         function setupLocalStorage() {
             loadBalances(); // Cargar datos persistentes
             updateUI();     // Mostrar datos cargados y renderizar historial
@@ -319,7 +352,7 @@
             updateButtonState(true); // Habilitar botones de acción
         }
 
-        // --- 7. Función para actualizar el saldo (Actualizada para llamar a updateUI) ---
+        // --- 7. Función para actualizar el saldo (Agregar Transacción) ---
         function updateBalance(targetKey) {
             if (!isAppReady) { 
                 showMessage("Error: La aplicación no está lista.", true);
@@ -346,7 +379,7 @@
             
             // Registrar Transacción
             const transaction = {
-                id: Date.now(),
+                id: Date.now(), // Usamos el timestamp como ID único
                 timestamp: new Date().toISOString(),
                 person: targetKey === 'piti' ? 'Piti' : 'Emi', 
                 amount: amountValue,
@@ -366,7 +399,43 @@
             updateButtonState(true); // Habilitar botones
         }
 
-        // --- 8. Función de Restablecimiento (Actualizada para llamar a updateUI) ---
+        // --- 8. Función para eliminar una transacción (MODIFICADA para no aceptar ID por parámetro) ---
+        function deleteTransactionConfirmed() {
+            if (txToDeleteId === null) return;
+
+            const txId = txToDeleteId;
+            const index = history.findIndex(tx => tx.id === txId);
+
+            if (index === -1) {
+                console.error("Transacción con ID:", txId, "no encontrada.");
+                showMessage("Error: Transacción no encontrada.", true);
+                return;
+            }
+
+            const transactionToDelete = history[index];
+            const amount = transactionToDelete.amount;
+            const person = transactionToDelete.person;
+
+            // Descontar el monto del total correspondiente
+            if (person === 'Piti') {
+                pitiTotal -= amount;
+            } else if (person === 'Emi') {
+                emiTotal -= amount;
+            }
+
+            // Eliminar del historial (usando splice)
+            history.splice(index, 1);
+            txToDeleteId = null; // Limpiar el ID temporal
+
+            // Guardar y actualizar UI
+            saveBalances();
+            updateUI();
+            
+            deleteTxModal.classList.add('hidden');
+            showMessage(`Registro de ${person} (${formatter.format(amount)}) eliminado correctamente.`, false);
+        }
+
+        // --- 9. Función de Restablecimiento ---
         function resetBalances() {
             pitiTotal = 0;
             emiTotal = 0;
@@ -376,7 +445,7 @@
             showMessage("Saldos e historial restablecidos a $0.", false);
         }
 
-        // --- 9. Función de Exportación (Sin cambios) ---
+        // --- 10. Función de Exportación (Sin cambios) ---
         function exportData() {
             if (history.length === 0) {
                 showMessage("No hay transacciones registradas para exportar.", true);
@@ -423,11 +492,11 @@
             showMessage("Datos exportados correctamente.", false);
         }
 
-        // --- 10. Asignación de Eventos (Sin cambios) ---
+        // --- 11. Asignación de Eventos ---
         addPitiButton.addEventListener('click', () => updateBalance('piti'));
         addEmiButton.addEventListener('click', () => updateBalance('emi'));
         
-        // Eventos del Modal
+        // Eventos del Modal de Restablecimiento
         resetButton.addEventListener('click', () => resetModal.classList.remove('hidden'));
         cancelResetButton.addEventListener('click', () => resetModal.classList.add('hidden'));
         confirmResetButton.addEventListener('click', () => {
@@ -437,7 +506,32 @@
 
         // Evento de Exportar
         exportButton.addEventListener('click', exportData);
+        
+        // Evento de Delegación para Abrir Modal de Borrar Transacción (MODIFICADO)
+        historyListEl.addEventListener('click', (event) => {
+            const button = event.target.closest('.delete-tx-button');
+            if (button) {
+                // 1. Obtener datos y almacenar ID temporalmente
+                txToDeleteId = parseInt(button.getAttribute('data-id'), 10);
+                const detail = button.getAttribute('data-detail');
+                const amount = button.getAttribute('data-amount');
+                const person = button.getAttribute('data-person');
 
+                // 2. Mostrar detalles en el modal
+                txDetailsToDeleteEl.textContent = `${person}: ${amount} - "${detail}"`;
+
+                // 3. Mostrar el modal
+                deleteTxModal.classList.remove('hidden');
+            }
+        });
+
+        // Eventos del Modal de Eliminación (NUEVO)
+        cancelDeleteTxButton.addEventListener('click', () => {
+            deleteTxModal.classList.add('hidden');
+            txToDeleteId = null; // Limpiar ID si cancela
+        });
+        
+        confirmDeleteTxButton.addEventListener('click', deleteTransactionConfirmed); // Llama a la función que usa el ID temporal
 
         // Iniciar la aplicación
         setupLocalStorage();
