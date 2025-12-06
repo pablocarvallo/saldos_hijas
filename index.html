@@ -46,6 +46,13 @@
         .modal-content {
             box-shadow: 0 10px 15px -3px rgba(0, 0, 0, 0.1), 0 4px 6px -4px rgba(0, 0, 0, 0.1);
         }
+        /* Estilo para la lista de historial */
+        .history-item-piti {
+            border-left: 4px solid #3b82f6; /* blue-500 */
+        }
+        .history-item-emi {
+            border-left: 4px solid #ec4899; /* pink-500 */
+        }
     </style>
 </head>
 <body class="bg-gray-100 min-h-screen p-4 flex items-center justify-center">
@@ -86,7 +93,7 @@
                 <input type="number" id="amount-input" placeholder="0.00" class="w-full p-3 border border-gray-300 rounded-lg focus:ring-blue-500 focus:border-blue-500 text-lg" inputmode="decimal">
             </div>
             
-            <!-- NUEVO Input de Detalle -->
+            <!-- Input de Detalle -->
             <div>
                 <label for="detail-input" class="block text-sm font-medium text-gray-600 mb-2">Detalle (ej: Helados)</label>
                 <input type="text" id="detail-input" placeholder="Detalle de la transacción (opcional)" class="w-full p-3 border border-gray-300 rounded-lg focus:ring-blue-500 focus:border-blue-500 text-lg">
@@ -118,6 +125,15 @@
             <p id="message-box" class="text-sm text-center pt-2 h-6"></p>
         </div>
         
+        <!-- Contenedor de Historial de Transacciones (NUEVO) -->
+        <div class="mt-8">
+            <h2 class="text-xl font-semibold text-gray-700 mb-3">Historial Reciente</h2>
+            <div id="history-list" class="space-y-3">
+                <!-- Las transacciones se renderizarán aquí -->
+                <p class="text-gray-500 text-center py-4" id="no-history-message">No hay registros aún.</p>
+            </div>
+        </div>
+
         <!-- Contenedor de estado de persistencia -->
         <div class="mt-8 text-center text-xs text-gray-500 p-3 bg-gray-200 rounded-lg">
             <p>Tipo de Persistencia: <span id="app-id-display" class="font-mono text-gray-700">LOCAL</span></p>
@@ -157,7 +173,7 @@
         const pitiTotalEl = document.getElementById('piti-total');
         const emiTotalEl = document.getElementById('emi-total');
         const amountInput = document.getElementById('amount-input');
-        const detailInput = document.getElementById('detail-input'); // NUEVO: Input de detalle
+        const detailInput = document.getElementById('detail-input'); 
         const addPitiButton = document.getElementById('add-piti');
         const addEmiButton = document.getElementById('add-emi');
         const resetButton = document.getElementById('reset-button');
@@ -167,6 +183,7 @@
         const resetModal = document.getElementById('reset-modal');
         const confirmResetButton = document.getElementById('confirm-reset');
         const cancelResetButton = document.getElementById('cancel-reset');
+        const historyListEl = document.getElementById('history-list'); // NUEVA Referencia
 
         // Formatear número a formato de moneda local
         const formatter = new Intl.NumberFormat('es-CL', {
@@ -175,44 +192,8 @@
             minimumFractionDigits: 0,
             maximumFractionDigits: 0,
         });
-
-        // Función para mostrar mensajes temporales en la UI
-        function showMessage(text, isError = false) {
-            messageBox.textContent = text;
-            messageBox.className = isError 
-                ? 'text-sm text-center pt-2 h-6 text-red-600' 
-                : 'text-sm text-center pt-2 h-6 text-green-600';
-            setTimeout(() => {
-                messageBox.textContent = '';
-                messageBox.className = 'text-sm text-center pt-2 h-6';
-            }, 3000);
-        }
-
-        // Función para habilitar/deshabilitar botones y cambiar su estilo
-        function updateButtonState(ready) {
-            addPitiButton.disabled = !ready;
-            addEmiButton.disabled = !ready;
-            resetButton.disabled = !ready;
-            exportButton.disabled = !ready;
-            
-            // Estilos para Piti
-            addPitiButton.classList.remove('bg-gray-400');
-            if (!ready) { addPitiButton.classList.add('bg-gray-400', 'cursor-not-allowed', 'shadow-none'); }
-
-            // Estilos para Emi
-            addEmiButton.classList.remove('bg-gray-400');
-            if (!ready) { addEmiButton.classList.add('bg-gray-400', 'cursor-not-allowed', 'shadow-none'); }
-            
-            // Estilos para Reset
-            resetButton.classList.remove('bg-gray-400');
-            if (!ready) { resetButton.classList.add('bg-gray-400', 'cursor-not-allowed', 'shadow-none'); }
-
-            // Estilos para Export
-            exportButton.classList.remove('bg-gray-400');
-            if (!ready) { exportButton.classList.add('bg-gray-400', 'cursor-not-allowed', 'shadow-none'); }
-        }
-
-        // --- 1. Funciones de Carga y Guardado de LocalStorage ---
+        
+        // --- 1. Funciones de Carga y Guardado de LocalStorage (Sin cambios) ---
         function loadBalances() {
             try {
                 // Cargar saldos, si no existen, usar 0
@@ -241,22 +222,104 @@
             }
         }
         
-        // --- 2. Función para actualizar la UI ---
+        // --- 2. Función para mostrar mensajes temporales en la UI (Sin cambios) ---
+        function showMessage(text, isError = false) {
+            messageBox.textContent = text;
+            messageBox.className = isError 
+                ? 'text-sm text-center pt-2 h-6 text-red-600' 
+                : 'text-sm text-center pt-2 h-6 text-green-600';
+            setTimeout(() => {
+                messageBox.textContent = '';
+                messageBox.className = 'text-sm text-center pt-2 h-6';
+            }, 3000);
+        }
+
+        // --- 3. Función para habilitar/deshabilitar botones (Sin cambios) ---
+        function updateButtonState(ready) {
+            addPitiButton.disabled = !ready;
+            addEmiButton.disabled = !ready;
+            resetButton.disabled = !ready;
+            exportButton.disabled = !ready;
+            
+            // Estilos para Piti
+            addPitiButton.classList.remove('bg-gray-400');
+            if (!ready) { addPitiButton.classList.add('bg-gray-400', 'cursor-not-allowed', 'shadow-none'); }
+
+            // Estilos para Emi
+            addEmiButton.classList.remove('bg-gray-400');
+            if (!ready) { addEmiButton.classList.add('bg-gray-400', 'cursor-not-allowed', 'shadow-none'); }
+            
+            // Estilos para Reset
+            resetButton.classList.remove('bg-gray-400');
+            if (!ready) { resetButton.classList.add('bg-gray-400', 'cursor-not-allowed', 'shadow-none'); }
+
+            // Estilos para Export
+            exportButton.classList.remove('bg-gray-400');
+            if (!ready) { exportButton.classList.add('bg-gray-400', 'cursor-not-allowed', 'shadow-none'); }
+        }
+
+        // --- 4. Función para renderizar el historial (NUEVO) ---
+        function renderHistory() {
+            historyListEl.innerHTML = ''; // Limpiar la lista actual
+            
+            // Si no hay historial, mostrar el mensaje
+            if (history.length === 0) {
+                historyListEl.innerHTML = '<p class="text-gray-500 text-center py-4">No hay registros aún.</p>';
+                return;
+            }
+
+            // Invertir el historial para mostrar lo más reciente primero
+            const reversedHistory = [...history].reverse();
+            
+            reversedHistory.forEach((tx) => {
+                const date = new Date(tx.timestamp).toLocaleDateString('es-CL', { 
+                    day: 'numeric', month: 'numeric', year: 'numeric' 
+                });
+                
+                const amountFormatted = formatter.format(tx.amount);
+                const isPiti = tx.person === 'Piti';
+                
+                // Determinar clases de estilo
+                const colorClass = isPiti ? 'text-blue-700' : 'text-pink-700';
+                const borderClass = isPiti ? 'history-item-piti' : 'history-item-emi';
+                
+                // Crear el elemento de la lista
+                const item = document.createElement('div');
+                item.className = `card p-3 rounded-xl flex items-center justify-between transition duration-150 ${borderClass}`;
+                
+                item.innerHTML = `
+                    <div class="flex flex-col space-y-0.5">
+                        <p class="text-xs text-gray-500 font-medium">${date}</p>
+                        <p class="text-base font-semibold text-gray-800">${tx.detail}</p>
+                    </div>
+                    <div class="text-right">
+                        <p class="text-lg font-bold ${colorClass}">+${amountFormatted}</p>
+                        <p class="text-sm font-semibold ${isPiti ? 'text-blue-500' : 'text-pink-500'}">${tx.person}</p>
+                    </div>
+                `;
+                
+                historyListEl.appendChild(item);
+            });
+        }
+
+        // --- 5. Función para actualizar la UI (Actualizada para incluir renderHistory) ---
         function updateUI() {
             pitiTotalEl.textContent = formatter.format(pitiTotal);
             emiTotalEl.textContent = formatter.format(emiTotal);
+            renderHistory(); // Llama a la nueva función
         }
 
-        // --- 3. Inicialización de la Aplicación ---
+
+        // --- 6. Inicialización de la Aplicación (Sin cambios, llama a updateUI) ---
         function setupLocalStorage() {
             loadBalances(); // Cargar datos persistentes
-            updateUI();     // Mostrar datos cargados
+            updateUI();     // Mostrar datos cargados y renderizar historial
             
             isAppReady = true;
             updateButtonState(true); // Habilitar botones de acción
         }
 
-        // --- 4. Función para actualizar el saldo (Localmente) ---
+        // --- 7. Función para actualizar el saldo (Actualizada para llamar a updateUI) ---
         function updateBalance(targetKey) {
             if (!isAppReady) { 
                 showMessage("Error: La aplicación no está lista.", true);
@@ -264,7 +327,7 @@
             }
             
             const amountValue = parseFloat(amountInput.value);
-            const detailValue = detailInput.value.trim() || 'Sin detalle'; // OBTENER DETALLE
+            const detailValue = detailInput.value.trim() || 'Sin detalle'; 
 
             if (isNaN(amountValue) || amountValue <= 0) {
                 showMessage("Por favor, ingresa un monto válido (mayor a 0).", true);
@@ -285,16 +348,16 @@
             const transaction = {
                 id: Date.now(),
                 timestamp: new Date().toISOString(),
-                person: targetKey === 'piti' ? 'Piti' : 'Emi', // Usar mayúscula para el export
+                person: targetKey === 'piti' ? 'Piti' : 'Emi', 
                 amount: amountValue,
-                detail: detailValue, // GUARDAR DETALLE
+                detail: detailValue, 
                 newPiti: pitiTotal,
                 newEmi: emiTotal
             };
             history.push(transaction);
 
             saveBalances(); // Guardar saldos y historial en localStorage
-            updateUI();     // Actualizar la interfaz
+            updateUI();     // Actualizar la interfaz y el historial
 
             showMessage(`Se agregaron ${formatter.format(amountValue)} a ${transaction.person}. Detalle: ${detailValue}`, false);
             amountInput.value = ''; // Limpiar el input de monto
@@ -303,17 +366,17 @@
             updateButtonState(true); // Habilitar botones
         }
 
-        // --- 5. Función de Restablecimiento ---
+        // --- 8. Función de Restablecimiento (Actualizada para llamar a updateUI) ---
         function resetBalances() {
             pitiTotal = 0;
             emiTotal = 0;
             history = []; // Borrar historial
             saveBalances(); // Guardar el estado de 0
-            updateUI();
+            updateUI(); // Actualizar saldos y limpiar la lista de historial
             showMessage("Saldos e historial restablecidos a $0.", false);
         }
 
-        // --- 6. Función de Exportación ---
+        // --- 9. Función de Exportación (Sin cambios) ---
         function exportData() {
             if (history.length === 0) {
                 showMessage("No hay transacciones registradas para exportar.", true);
@@ -360,7 +423,7 @@
             showMessage("Datos exportados correctamente.", false);
         }
 
-        // --- 7. Asignación de Eventos ---
+        // --- 10. Asignación de Eventos (Sin cambios) ---
         addPitiButton.addEventListener('click', () => updateBalance('piti'));
         addEmiButton.addEventListener('click', () => updateBalance('emi'));
         
